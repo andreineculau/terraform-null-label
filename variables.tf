@@ -1,31 +1,6 @@
 variable "context" {
-  type = any
-  default = {
-    enabled             = true
-    namespace           = null
-    tenant              = null
-    environment         = null
-    stage               = null
-    name                = null
-    delimiter           = null
-    attributes          = []
-    tags                = {}
-    additional_tag_map  = {}
-    regex_replace_chars = null
-    label_order         = []
-    id_length_limit     = null
-    label_key_case      = null
-    label_value_case    = null
-    descriptor_formats  = {}
-    # Note: we have to use [] instead of null for unset lists due to
-    # https://github.com/hashicorp/terraform/issues/28137
-    # which was not fixed until Terraform 1.0.0,
-    # but we want the default to be all the labels in `label_order`
-    # and we want users to be able to prevent all tag generation
-    # by setting `labels_as_tags` to `[]`, so we need
-    # a different sentinel to indicate "default"
-    labels_as_tags = ["unset"]
-  }
+  type        = any
+  default     = {}
   description = <<-EOT
     Single object for setting entire context at once.
     See description of individual variables for details.
@@ -35,12 +10,18 @@ variable "context" {
   EOT
 
   validation {
-    condition     = lookup(var.context, "label_key_case", null) == null ? true : contains(["lower", "title", "upper"], var.context["label_key_case"])
+    condition = (
+      lookup(var.context, "label_key_case", null) == null ? true :
+      contains(["lower", "title", "upper"], var.context["label_key_case"])
+    )
     error_message = "Allowed values: `lower`, `title`, `upper`."
   }
 
   validation {
-    condition     = lookup(var.context, "label_value_case", null) == null ? true : contains(["lower", "title", "upper", "none"], var.context["label_value_case"])
+    condition = (
+      lookup(var.context, "label_value_case", null) == null ? true :
+      contains(["lower", "title", "upper", "none"], var.context["label_value_case"])
+    )
     error_message = "Allowed values: `lower`, `title`, `upper`, `none`."
   }
 }
@@ -54,25 +35,38 @@ variable "enabled" {
 variable "namespace" {
   type        = string
   default     = null
-  description = "ID element. Usually an abbreviation of your organization name, e.g. 'eg' or 'cp', to help ensure generated IDs are globally unique"
+  description = <<-EOT
+    ID element.
+    Usually an abbreviation of your organization name, e.g. 'eg' or 'cp',
+    to help ensure generated IDs are globally unique"
+    EOT
 }
 
 variable "tenant" {
   type        = string
   default     = null
-  description = "ID element _(Rarely used, not included by default)_. A customer identifier, indicating who this instance of a resource is for"
+  description = <<-EOT
+    ID element _(Rarely used, not included by default)_.
+    A customer identifier, indicating who this instance of a resource is for"
+    EOT
 }
 
 variable "environment" {
   type        = string
   default     = null
-  description = "ID element. Usually used for region e.g. 'uw2', 'us-west-2', OR role 'prod', 'staging', 'dev', 'UAT'"
+  description = <<-EOT
+    ID element.
+    Usually used for region e.g. 'uw2', 'us-west-2', OR role 'prod', 'staging', 'dev', 'UAT'"
+    EOT
 }
 
 variable "stage" {
   type        = string
   default     = null
-  description = "ID element. Usually used to indicate role, e.g. 'prod', 'staging', 'source', 'build', 'test', 'deploy', 'release'"
+  description = <<-EOT
+    ID element.
+    Usually used to indicate role, e.g. 'prod', 'staging', 'source', 'build', 'test', 'deploy', 'release'"
+    EOT
 }
 
 variable "name" {
@@ -159,6 +153,15 @@ variable "regex_replace_chars" {
   EOT
 }
 
+variable "replacement" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Replacement string for the regex_replace_chars.
+    Default is `""` (empty string).
+    EOT
+}
+
 variable "id_length_limit" {
   type        = number
   default     = null
@@ -172,6 +175,22 @@ variable "id_length_limit" {
     condition     = var.id_length_limit == null ? true : var.id_length_limit >= 6 || var.id_length_limit == 0
     error_message = "The id_length_limit must be >= 6 if supplied (not null), or 0 for unlimited length."
   }
+}
+
+variable "id_hash_length" {
+  type        = number
+  default     = null
+  description = <<-EOT
+    Length of the hash to append to the `id` to ensure uniqueness.
+    Set to `0` for no hash.
+    Set to `null` for keep the existing setting, which defaults to `12`.
+    EOT
+}
+
+variable "id_hash_unique" {
+  type        = bool
+  default     = null
+  description = "Set to true to append a unique hash to the `id`, regardless of the `id_length_limit`."
 }
 
 variable "label_key_case" {
@@ -203,7 +222,10 @@ variable "label_value_case" {
   EOT
 
   validation {
-    condition     = var.label_value_case == null ? true : contains(["lower", "title", "upper", "none"], var.label_value_case)
+    condition = (
+      var.label_value_case == null ? true :
+      contains(["lower", "title", "upper", "none"], var.label_value_case)
+    )
     error_message = "Allowed values: `lower`, `title`, `upper`, `none`."
   }
 }
@@ -215,8 +237,8 @@ variable "descriptor_formats" {
     Describe additional descriptors to be output in the `descriptors` output map.
     Map of maps. Keys are names of descriptors. Values are maps of the form
     `{
-       format = string
-       labels = list(string)
+      format = string
+      labels = list(string)
     }`
     (Type is `any` so the map values can later be enhanced to provide additional options.)
     `format` is a Terraform format string to be passed to the `format()` function.
