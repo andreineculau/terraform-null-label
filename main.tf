@@ -1,6 +1,11 @@
-locals {
+resource "random_id" "main" {
+  for_each    = local.enabled && local.id_hash_unique ? { "enabled" : true } : {}
+  byte_length = local.id_hash_length
+}
 
-  defaults = {
+locals {
+  # tflint-ignore: terraform_naming_convention
+  _defaults = {
     # The `tenant` label was introduced in v0.25.0. To preserve backward compatibility, or, really, to ensure
     # that people using the `tenant` label are alerted that it was not previously supported if they try to
     # use it in an older version, it is not included by default.
@@ -12,6 +17,8 @@ locals {
     id_hash_length      = 5
     label_key_case      = "title"
     label_value_case    = "lower"
+    style               = "aws"
+    id_hash_version     = 2
 
     # The default value of labels_as_tags cannot be included in this
     # defaults` map because it creates a circular dependency
@@ -34,38 +41,78 @@ locals {
   #
   # To determine whether that context.labels_as_tags is not set,
   # we have to cover 2 cases: 1) context does not have a labels_as_tags key, 2) it is present and set to ["unset"]
-  context_labels_as_tags_is_unset = try(contains(var.context.labels_as_tags, "unset"), true)
+  context_labels_as_tags_is_unset = try(contains(local.raw_input.labels_as_tags, "unset"), true)
 
-  # So far, we have decided not to allow overriding replacement or id_hash_length
-  replacement    = local.defaults.replacement
-  id_hash_length = local.defaults.id_hash_length
+  raw_input = merge(
+    {
+      enabled             = true
+      namespace           = null
+      tenant              = null
+      environment         = null
+      stage               = null
+      name                = null
+      delimiter           = null
+      attributes          = []
+      tags                = {}
+      additional_tag_map  = {}
+      regex_replace_chars = null
+      label_order         = []
+      replacement         = null
+      id_length_limit     = null
+      id_hash_length      = null
+      id_hash_unique      = null
+      label_key_case      = null
+      label_value_case    = null
+      descriptor_formats  = {}
+      # Note: we have to use [] instead of null for unset lists due to
+      # https://github.com/hashicorp/terraform/issues/28137
+      # which was not fixed until Terraform 1.0.0,
+      # but we want the default to be all the labels in `label_order`
+      # and we want users to be able to prevent all tag generation
+      # by setting `labels_as_tags` to `[]`, so we need
+      # a different sentinel to indicate "default"
+      labels_as_tags  = ["unset"]
+      style           = null
+      id_hash_version = null
+    },
+    var.context
+  )
 
   # The values provided by variables supersede the values inherited from the context object,
   # except for tags and attributes which are merged.
   input = {
     # It would be nice to use coalesce here, but we cannot, because it
     # is an error for all the arguments to coalesce to be empty.
-    enabled   = var.enabled == null ? var.context.enabled : var.enabled
-    namespace = var.namespace == null ? var.context.namespace : var.namespace
+    enabled   = try(coalesce(var.enabled, local.raw_input.enabled), true)
+    namespace = try(coalesce(var.namespace, local.raw_input.namespace), null)
     # tenant was introduced in v0.25.0, prior context versions do not have it
-    tenant      = var.tenant == null ? lookup(var.context, "tenant", null) : var.tenant
-    environment = var.environment == null ? var.context.environment : var.environment
-    stage       = var.stage == null ? var.context.stage : var.stage
-    name        = var.name == null ? var.context.name : var.name
-    delimiter   = var.delimiter == null ? var.context.delimiter : var.delimiter
+    tenant      = try(coalesce(var.tenant, local.raw_input.tenant), null)
+    environment = try(coalesce(var.environment, local.raw_input.environment), null)
+    stage       = try(coalesce(var.stage, local.raw_input.stage), null)
+    name        = try(coalesce(var.name, local.raw_input.name), null)
+    delimiter   = try(coalesce(var.delimiter, local.raw_input.delimiter), null)
     # modules tack on attributes (passed by var) to the end of the list (passed by context)
-    attributes = compact(distinct(concat(coalesce(var.context.attributes, []), coalesce(var.attributes, []))))
-    tags       = merge(var.context.tags, var.tags)
+    attributes = compact(distinct(concat(local.raw_input.attributes, var.attributes)))
+    tags       = merge(local.raw_input.tags, var.tags)
 
-    additional_tag_map  = merge(var.context.additional_tag_map, var.additional_tag_map)
-    label_order         = var.label_order == null ? var.context.label_order : var.label_order
-    regex_replace_chars = var.regex_replace_chars == null ? var.context.regex_replace_chars : var.regex_replace_chars
-    id_length_limit     = var.id_length_limit == null ? var.context.id_length_limit : var.id_length_limit
-    label_key_case      = var.label_key_case == null ? lookup(var.context, "label_key_case", null) : var.label_key_case
-    label_value_case    = var.label_value_case == null ? lookup(var.context, "label_value_case", null) : var.label_value_case
+    additional_tag_map  = merge(local.raw_input.additional_tag_map, var.additional_tag_map)
+    label_order         = try(coalesce(var.label_order, local.raw_input.label_order), [])
+    regex_replace_chars = try(coalesce(var.regex_replace_chars, local.raw_input.regex_replace_chars), null)
+    replacement         = try(coalesce(var.replacement, local.raw_input.replacement), null)
+    id_length_limit     = try(coalesce(var.id_length_limit, local.raw_input.id_length_limit), null)
+    id_hash_length      = try(coalesce(var.id_hash_length, local.raw_input.id_hash_length), null)
+    id_hash_unique      = try(coalesce(var.id_hash_unique, local.raw_input.id_hash_unique), null)
+    label_key_case      = try(coalesce(var.label_key_case, local.raw_input.label_key_case), null)
+    label_value_case    = try(coalesce(var.label_value_case, local.raw_input.label_value_case), null)
 
-    descriptor_formats = merge(lookup(var.context, "descriptor_formats", {}), var.descriptor_formats)
-    labels_as_tags     = local.context_labels_as_tags_is_unset ? var.labels_as_tags : var.context.labels_as_tags
+    descriptor_formats = merge(local.raw_input.descriptor_formats, var.descriptor_formats)
+    labels_as_tags = (
+      local.context_labels_as_tags_is_unset ? var.labels_as_tags :
+      try(local.raw_input.labels_as_tags, ["default"])
+    )
+
+    style           = try(coalesce(var.style, local.raw_input.style), null)
+    id_hash_version = try(coalesce(var.id_hash_version, local.raw_input.id_hash_version), null)
   }
 
 
@@ -75,13 +122,19 @@ locals {
   # string_label_names are names of inputs that are strings (not list of strings) used as labels
   string_label_names = ["namespace", "tenant", "environment", "stage", "name"]
   normalized_labels = { for k in local.string_label_names : k =>
-    local.input[k] == null ? "" : replace(local.input[k], local.regex_replace_chars, local.replacement)
+    local.input[k] == null ? "" :
+    replace(local.input[k], local.regex_replace_chars, local.replacement)
   }
-  normalized_attributes = compact(distinct([for v in local.input.attributes : replace(v, local.regex_replace_chars, local.replacement)]))
+  normalized_attributes = compact(distinct(
+    [for v in local.input.attributes : replace(v, local.regex_replace_chars, local.replacement)]
+  ))
 
-  formatted_labels = { for k in local.string_label_names : k => local.label_value_case == "none" ? local.normalized_labels[k] :
+  formatted_labels = {
+    for k in local.string_label_names : k =>
+    local.label_value_case == "none" ? local.normalized_labels[k] :
     local.label_value_case == "title" ? title(lower(local.normalized_labels[k])) :
-    local.label_value_case == "upper" ? upper(local.normalized_labels[k]) : lower(local.normalized_labels[k])
+    local.label_value_case == "upper" ? upper(local.normalized_labels[k]) :
+    lower(local.normalized_labels[k])
   }
 
   attributes = compact(distinct([
@@ -96,19 +149,28 @@ locals {
   stage       = local.formatted_labels["stage"]
   name        = local.formatted_labels["name"]
 
-  delimiter        = local.input.delimiter == null ? local.defaults.delimiter : local.input.delimiter
-  label_order      = local.input.label_order == null ? local.defaults.label_order : coalescelist(local.input.label_order, local.defaults.label_order)
-  id_length_limit  = local.input.id_length_limit == null ? local.defaults.id_length_limit : local.input.id_length_limit
-  label_key_case   = local.input.label_key_case == null ? local.defaults.label_key_case : local.input.label_key_case
-  label_value_case = local.input.label_value_case == null ? local.defaults.label_value_case : local.input.label_value_case
+  delimiter        = coalesce(local.input.delimiter, local.defaults.delimiter)
+  label_order      = coalescelist(coalesce(local.input.label_order, []), local.defaults.label_order)
+  replacement      = try(coalesce(local.input.replacement, local.defaults.replacement), local.defaults.replacement)
+  id_length_limit  = coalesce(local.input.id_length_limit, local.defaults.id_length_limit)
+  id_hash_length   = coalesce(local.input.id_hash_length, local.defaults.id_hash_length)
+  id_hash_unique   = coalesce(local.input.id_hash_unique, local.defaults.id_hash_unique)
+  label_key_case   = coalesce(local.input.label_key_case, local.defaults.label_key_case)
+  label_value_case = coalesce(local.input.label_value_case, local.defaults.label_value_case)
 
   # labels_as_tags is an exception to the rule that input vars override context values (see above)
-  labels_as_tags = contains(local.input.labels_as_tags, "default") ? local.default_labels_as_tags : local.input.labels_as_tags
+  labels_as_tags = (
+    contains(local.input.labels_as_tags, "default") ? local.default_labels_as_tags :
+    local.input.labels_as_tags
+  )
+
+  style           = coalesce(local.input.style, local.defaults.style)
+  id_hash_version = coalesce(local.input.id_hash_version, local.defaults.id_hash_version)
 
   # Just for standardization and completeness
   descriptor_formats = local.input.descriptor_formats
 
-  additional_tag_map = merge(var.context.additional_tag_map, var.additional_tag_map)
+  additional_tag_map = local.input.additional_tag_map
 
   tags = merge(local.generated_tags, local.input.tags)
 
@@ -126,7 +188,7 @@ locals {
     environment = local.environment
     stage       = local.stage
     # For AWS we need `Name` to be disambiguated since it has a special meaning
-    name       = local.id
+    name       = local._style == "aws" || startswith(local._style, "aws_") ? local.id : local.name
     attributes = local.id_context.attributes
   }
 
@@ -154,16 +216,53 @@ locals {
   # Calculate length of normal part of ID, leaving room for delimiter and hash
   id_truncated_length_limit = local.id_length_limit - (local.id_hash_length + local.delimiter_length)
   # Truncate the ID and ensure a single (not double) trailing delimiter
-  id_truncated = local.id_truncated_length_limit <= 0 ? "" : "${trimsuffix(substr(local.id_full, 0, local.id_truncated_length_limit), local.delimiter)}${local.delimiter}"
-  # Support usages that disallow numeric characters. Would prefer tr 0-9 q-z but Terraform does not support it.
-  # Probably would have been better to take the hash of only the characters being removed,
-  # so identical removed strings would produce identical hashes, but it is not worth breaking existing IDs for.
-  id_hash_plus = "${md5(local.id_full)}qrstuvwxyz"
-  id_hash_case = local.label_value_case == "title" ? title(local.id_hash_plus) : local.label_value_case == "upper" ? upper(local.id_hash_plus) : local.label_value_case == "lower" ? lower(local.id_hash_plus) : local.id_hash_plus
-  id_hash      = replace(local.id_hash_case, local.regex_replace_chars, local.replacement)
+  id_truncated = (
+    local.id_truncated_length_limit <= 0 ? "" :
+    "${trimsuffix(substr(local.id_full, 0, local.id_truncated_length_limit), local.delimiter)}${local.delimiter}"
+  )
+  # Support usages that disallow numeric characters. Similar to tr 0-9 q-z.
+  id_hash_plus_neg_v1 = "qrstuvwxyz"
+  id_hash_plus_neg_v2 = (
+    replace(
+      replace(
+        replace(
+          replace(
+            replace(
+              replace(
+                replace(
+                  replace(
+                    replace(
+                      replace(
+                        md5("${local.id_full}${try(random_id.main["enabled"].id, "")}"),
+                      "0", "q"),
+                    "1", "r"),
+                  "2", "s"),
+                "3", "t"),
+              "4", "u"),
+            "5", "v"),
+          "6", "w"),
+        "7", "x"),
+      "8", "y"),
+    "9", "z")
+  )
+  id_hash_plus = (
+    local.id_hash_version == 1 ? "${md5(local.id_full)}${local.id_hash_plus_neg_v1}" :
+    "${md5("${local.id_full}${try(random_id.main["enabled"].id, "")}")}${local.id_hash_plus_neg_v2}"
+  )
+  id_hash_case = (
+    local.label_value_case == "title" ? title(local.id_hash_plus) :
+    local.label_value_case == "upper" ? upper(local.id_hash_plus) :
+    local.label_value_case == "lower" ? lower(local.id_hash_plus) :
+    local.id_hash_plus
+  )
+  id_hash = substr(replace(local.id_hash_case, local.regex_replace_chars, local.replacement), 0, local.id_hash_length + local.delimiter_length) # editorconfig-checker-disable-line
   # Create the short ID by adding a hash to the end of the truncated ID
   id_short = substr("${local.id_truncated}${local.id_hash}", 0, local.id_length_limit)
-  id       = local.id_length_limit != 0 && length(local.id_full) > local.id_length_limit ? local.id_short : local.id_full
+  id = (
+    local.id_hash_unique ? local.id_short :
+    local.id_length_limit != 0 && length(local.id_full) > local.id_length_limit ? local.id_short :
+    local.id_full
+  )
 
 
   # Context of this label to pass to other label modules
@@ -185,6 +284,10 @@ locals {
     label_value_case    = local.label_value_case
     labels_as_tags      = local.labels_as_tags
     descriptor_formats  = local.descriptor_formats
+    style               = local.style
+    id_hash_length      = local.id_hash_length
+    id_hash_unique      = local.id_hash_unique
+    id_hash_version     = local.id_hash_version
   }
 
 }
