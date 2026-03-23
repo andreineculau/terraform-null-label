@@ -4,6 +4,5 @@
   "version": "25.0.17",
   "license": "Apache-2.0",
   "dependencies": {
-    "pytti": "git+ssh://git@github.com/vend-com/pytti.git#semver:~0.1.0"
   }
 }
